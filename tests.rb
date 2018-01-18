@@ -1,6 +1,13 @@
 class DBType
   extend RDL::Annotate
 
+  def self.fail_tests
+    insert_fail_tests
+    where_fail_tests
+    join_fail_tests
+    return true
+  end
+
 
   ###### INSERTION METHODS #######
   
