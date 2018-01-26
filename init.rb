@@ -97,6 +97,8 @@ RDL::Globals.db_schema[:Person] = RDL::Globals.parser.scan_str "#T Person<{id: I
 RDL::Globals.db_schema[:Item] = RDL::Globals.parser.scan_str "#T Item<{id: Integer, person_id: Integer, name: String, created_at: DateTime, updated_at: DateTime, __associations: {belongs_to: :person}}>"
 RDL::Globals.db_schema[:Job] = RDL::Globals.parser.scan_str "#T Job<{id: Integer, name: String, job: String, __associations: {belongs_to: :person or :item}}>"
 
+RDL.do_typecheck :ast_later
+
 def run
   CreatePersonsTable.migrate(:up)
   CreateItemsTable.migrate(:up)

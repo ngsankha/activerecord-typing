@@ -66,10 +66,11 @@ module ActiveRecord::Querying
   type :exists?, '(``DBType.exists_input_type(trec, targs)``) -> %bool', wrap: false
 
 
-  type :where, '(``DBType.where_input_type(trec, targs)``) -> ``RDL::Type::GenericType.new(RDL::Type::NominalType.new(ActiveRecord_Relation), DBType.rec_to_nominal(trec))``', wrap: false
-  type :where, '(String, Hash) -> ``RDL::Type::GenericType.new(RDL::Type::NominalType.new(ActiveRecord_Relation), DBType.rec_to_nominal(trec))``', wrap: false
-  type :where, '(String, *String) -> ``RDL::Type::GenericType.new(RDL::Type::NominalType.new(ActiveRecord_Relation), DBType.rec_to_nominal(trec))``', wrap: false
-  type :where, '() -> ``RDL::Type::GenericType.new(RDL::Type::NominalType.new(ActiveRecord::QueryMethods::WhereChain), DBType.rec_to_nominal(trec))``', wrap: false
+  # type :where, '(``DBType.where_input_type(trec, targs)``) -> ``RDL::Type::AstNode.new(:SELECT, trec)``', wrap: false
+  type :where, '(``DBType.where_input_type(trec, targs)``) -> ``DBType.where_output_type(trec, targs)``', wrap: false
+  # type :where, '(String, Hash) -> ``RDL::Type::GenericType.new(RDL::Type::NominalType.new(ActiveRecord_Relation), DBType.rec_to_nominal(trec))``', wrap: false
+  # type :where, '(String, *String) -> ``RDL::Type::GenericType.new(RDL::Type::NominalType.new(ActiveRecord_Relation), DBType.rec_to_nominal(trec))``', wrap: false
+  # type :where, '() -> ``RDL::Type::GenericType.new(RDL::Type::NominalType.new(ActiveRecord::QueryMethods::WhereChain), DBType.rec_to_nominal(trec))``', wrap: false
 
 
   type :joins, '(``DBType.joins_one_input_type(trec, targs)``) -> ``DBType.joins_one_in_output(trec, targs)``', wrap: false
@@ -82,10 +83,10 @@ module ActiveRecord::QueryMethods
   extend RDL::Annotate
   ## Types from this module are used when receiver is ActiveRecord_relation
   
-  type :where, '(``DBType.where_input_type(trec, targs)``) -> ``RDL::Type::GenericType.new(RDL::Type::NominalType.new(ActiveRecord_Relation), trec.params[0])``', wrap: false
-  type :where, '(String, Hash) -> ``RDL::Type::GenericType.new(RDL::Type::NominalType.new(ActiveRecord_Relation), trec.params[0])``', wrap: false
-  type :where, '(String, *String) -> ``RDL::Type::GenericType.new(RDL::Type::NominalType.new(ActiveRecord_Relation), trec.params[0])``', wrap: false
-  type :where, '() -> ``DBType.where_noarg_output_type(trec)``', wrap: false
+  # type :where, '(``DBType.where_input_type(trec, targs)``) -> ``RDL::Type::GenericType.new(RDL::Type::NominalType.new(ActiveRecord_Relation), trec.params[0])``', wrap: false
+  # type :where, '(String, Hash) -> ``RDL::Type::GenericType.new(RDL::Type::NominalType.new(ActiveRecord_Relation), trec.params[0])``', wrap: false
+  # type :where, '(String, *String) -> ``RDL::Type::GenericType.new(RDL::Type::NominalType.new(ActiveRecord_Relation), trec.params[0])``', wrap: false
+  # type :where, '() -> ``DBType.where_noarg_output_type(trec)``', wrap: false
 
 end
 
@@ -161,6 +162,19 @@ class DBType
     RDL::Type::GenericType.new(RDL::Globals.types[:array], rec_to_nominal(trec))
   end
 
+  def self.rec_to_ast_type(trec)
+    case trec
+    when RDL::Type::GenericType
+      raise "I am a generic type"
+    when RDL::Type::SingletonType
+      raise RDL::Typecheck::StaticTypeError, "Unexpected receiver type #{trec}." unless trec.val.is_a?(Class)
+      tname = trec.val.to_s.to_sym
+      return table_name_to_schema_type(tname, true)
+    else
+      raise RDL::Typecheck::StaticTypeError, "Unexpected receiver type #{trec}."
+    end
+  end
+
   ## given a receiver type in various kinds of query calls, returns the accepted finite hash type input,
   ## or a union of types if the receiver represents joined tables.
   ## [+ trec +] is the type of the receiver in the method call.
@@ -200,7 +214,7 @@ class DBType
       else
         raise RDL::Typecheck::StaticTypeError, "Unexpected type parameter in  #{trec}."
       end
-    when RDL::Type::SingletonType
+    when RDL::Type::SingletonType, RDL::Type::AstNode
       raise RDL::Typecheck::StaticTypeError, "Unexpected receiver type #{trec}." unless trec.val.is_a?(Class)
       tname = trec.val.to_s.to_sym
       return table_name_to_schema_type(tname, check_col)
@@ -230,9 +244,39 @@ class DBType
     RDL::Type::FiniteHashType.new(h, nil)
   end
 
+  def self.rec_to_ast_type(trec, targs)
+    astnode = RDL::Type::AstNode.new(:AND, targs)
+    case trec
+    when RDL::Type::AstNode
+      if trec.children[:projection]
+        trec.children[:projection] << astnode
+      else
+        trec.children[:projection] = [astnode]
+      end
+      return trec
+    when RDL::Type::SingletonType
+      tret = RDL::Type::AstNode.new(:SELECT, trec)
+      tret.children[:projection] = [astnode]
+      return tret
+    else
+      raise RDL::Typecheck::StaticTypeError, "Unexpected receiver type #{trec}."
+    end
+  end
+
+  def self.where_output_type(trec, targs)
+    tschema = rec_to_ast_type(trec, targs)
+    return tschema
+    # return RDL::Type::UnionType.new(tschema, RDL::Globals.types[:string], RDL::Globals.types[:array]) ## no indepth checking for string or array cases
+  end
+
   def self.where_input_type(trec, targs)
-    tschema = rec_to_schema_type(trec, true)
-    return RDL::Type::UnionType.new(tschema, RDL::Globals.types[:string], RDL::Globals.types[:array]) ## no indepth checking for string or array cases
+    case trec
+    when RDL::Type::AstNode
+      return trec
+    else
+      tschema = rec_to_schema_type(trec, true)
+      return RDL::Type::UnionType.new(tschema, RDL::Globals.types[:string], RDL::Globals.types[:array]) ## no indepth checking for string or array cases
+    end
   end
 
   def self.where_noarg_output_type(trec)
@@ -360,8 +404,18 @@ class DBType
     return RDL::Globals.types[:top] unless targs.size == 1 ## trivial case, won't be matched
     raise RDL::Typecheck::StaticTypeError, "Unexpected joins arg type #{targs[0]}" unless targs[0].is_a?(RDL::Type::SingletonType) && (targs[0].val.class == Symbol)
     arg_kl = targs[0].val.to_s.singularize.camelize
-    jt = RDL::Type::GenericType.new(RDL::Type::NominalType.new(JoinTable), rec_to_nominal(trec), RDL::Type::NominalType.new(arg_kl))
-    RDL::Type::GenericType.new(RDL::Type::NominalType.new(ActiveRecord_Relation), jt)
+    jt = RDL::Type::AstNode.new(:JOIN, RDL::Type::NominalType.new(arg_kl))
+    case trec
+    when RDL::Type::AstNode
+      trec.children[:joins] << jt
+      return trec
+    when RDL::Type::SingletonType
+      tret = RDL::Type::AstNode.new(:SELECT, trec)
+      tret.children[:joins] = [jt]
+      return tret
+    else
+      raise RDL::Typecheck::StaticTypeError, "Unexpected receiver type #{trec}."
+    end
   end
 
   def self.joins_multi_output(trec, targs)

@@ -8,6 +8,17 @@ class DBType
     return true
   end
 
+  ###### AST Tests #######
+  type '() -> Person', typecheck: :ast_later, wrap: false
+  def self.ast_insert
+    Person.new(first_name: 'sankha', last_name: 'guria')
+  end
+
+  type '() -> AstNode[Person]', typecheck: :ast_later, wrap: false
+  def self.ast_where_test
+    Person.joins(:items).where(items: {name: 'blah'}).first
+  end
+
 
   ###### INSERTION METHODS #######
   
