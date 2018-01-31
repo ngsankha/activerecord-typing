@@ -246,26 +246,6 @@ class DBType
     end
   end
 
-  def self.where_output_type(trec, targs)
-    case trec
-    when RDL::Type::SingletonType
-      select_node = RDL::Type::AstNode.new(:SELECT, trec)
-      unless targs.size == 0
-        where_node = RDL::Type::AstNode.new(:WHERE, nil)
-        cond_node = RDL::Type::AstNode.new(:COND, targs)
-        where_node.insert cond_node
-        select_node.insert where_node
-      end
-      return select_node
-    when RDL::Type::AstNode
-      cond_node = RDL::Type::AstNode.new(:COND, targs)
-      trec.curr.insert cond_node
-      return trec
-    else
-      raise RDL::Typecheck::StaticTypeError, "Unexpected receiver type #{trec}."
-    end
-  end
-
   def self.where_input_type(trec, targs)
     case trec
     when RDL::Type::AstNode
@@ -300,13 +280,43 @@ class DBType
     end
   end
 
+    def self.where_output_type(trec, targs)
+    case trec
+    when RDL::Type::SingletonType
+      select_node = RDL::Type::AstNode.new(:SELECT, trec)
+      unless targs.size == 0
+        where_node = RDL::Type::AstNode.new(:WHERE, nil)
+        cond_node = RDL::Type::AstNode.new(:COND, targs)
+        where_node.insert cond_node
+        select_node.insert where_node
+      end
+      return select_node
+    when RDL::Type::AstNode
+      where_node = trec.find_one :WHERE
+      unless where_node
+        where_node = RDL::Type::AstNode.new(:WHERE, nil)
+        trec.insert where_node
+      end
+      cond_node = RDL::Type::AstNode.new(:COND, targs)
+      where_node.insert cond_node
+      return trec
+    else
+      raise RDL::Typecheck::StaticTypeError, "Unexpected receiver type #{trec}."
+    end
+  end
+
   def self.not_output_type(trec, targs)
     case trec
     when RDL::Type::AstNode
       not_node = RDL::Type::AstNode.new(:NOT, nil)
       cond_node = RDL::Type::AstNode.new(:COND, targs)
+      where_node = trec.find_one :WHERE
+      unless where_node
+        where_node = RDL::Type::AstNode.new(:WHERE, nil)
+        trec.insert where_node
+      end
       not_node.insert cond_node
-      trec.curr.insert not_node
+      where_node.insert not_node
       return trec
     else
       raise RDL::Typecheck::StaticTypeError, "Unexpected receiver type #{trec}."
@@ -419,15 +429,15 @@ class DBType
     return RDL::Globals.types[:top] unless targs.size == 1 ## trivial case, won't be matched
     raise RDL::Typecheck::StaticTypeError, "Unexpected joins arg type #{targs[0]}" unless targs[0].is_a?(RDL::Type::SingletonType) && (targs[0].val.class == Symbol)
     arg_kl = targs[0].val.to_s.singularize.camelize
-    jt = RDL::Type::AstNode.new(:JOIN, RDL::Type::NominalType.new(arg_kl))
+    join_node = RDL::Type::AstNode.new(:JOIN, RDL::Type::NominalType.new(arg_kl))
     case trec
     when RDL::Type::AstNode
-      trec.children[:joins] << jt
+      trec.insert join_node
       return trec
     when RDL::Type::SingletonType
-      tret = RDL::Type::AstNode.new(:SELECT, trec)
-      tret.children[:joins] = [jt]
-      return tret
+      select_node = RDL::Type::AstNode.new(:SELECT, trec)
+      select_node.insert join_node
+      return select_node
     else
       raise RDL::Typecheck::StaticTypeError, "Unexpected receiver type #{trec}."
     end

@@ -26,7 +26,17 @@ class DBType
 
   type '() -> Person', typecheck: :ast_later, wrap: false
   def self.ast_where_not_test
-    Person.where.not(first_name: 'milod', last_name: 'kaz').first
+    Person.where(last_name: 'kaz').not(first_name: 'milod').first
+  end
+
+  type '() -> Person', wrap: false, typecheck: :ast_later
+  def self.ast_join_test
+    Person.joins(:items).first
+  end
+
+  type '() -> Person', typecheck: :ast_later, wrap: false
+  def self.ast_join_where_not_test
+    Person.joins(:items).where(last_name: 'kaz').not(first_name: 'milod').first
   end
 
   ###### INSERTION METHODS #######

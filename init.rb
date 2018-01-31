@@ -97,20 +97,30 @@ RDL::Globals.db_schema[:Person] = RDL::Globals.parser.scan_str "#T Person<{id: I
 RDL::Globals.db_schema[:Item] = RDL::Globals.parser.scan_str "#T Item<{id: Integer, person_id: Integer, name: String, created_at: DateTime, updated_at: DateTime, __associations: {belongs_to: :person}}>"
 RDL::Globals.db_schema[:Job] = RDL::Globals.parser.scan_str "#T Job<{id: Integer, name: String, job: String, __associations: {belongs_to: :person or :item}}>"
 
-RDL.do_typecheck :ast_later
+
 
 def run
+  File.delete 'test.db'
   CreatePersonsTable.migrate(:up)
   CreateItemsTable.migrate(:up)
   CreateJobsTable.migrate(:up)
 
   # puts Person.joins(:items).where.not(items: {name: 'blah'}).to_sql
-  DBType.insert_test
+  # DBType.insert_test
   #DBType.insert_test_fail1
+
+  i = Item.new(name: 'pen')
+  p = Person.new(first_name: 'sankha', last_name: 'guria')
+  p.items << i
+  p.save
+  i.save
+  puts Person.includes(:items).all[0].methods
+
 
   CreatePersonsTable.migrate(:down)
   CreateItemsTable.migrate(:down)
   CreateJobsTable.migrate(:down)
 end
 
+RDL.do_typecheck :ast_later
 # run
