@@ -66,36 +66,15 @@ module ActiveRecord::Querying
   type :exists?, '(``DBType.exists_input_type(trec, targs)``) -> %bool', wrap: false
 
 
-  # type :where, '(``DBType.where_input_type(trec, targs)``) -> ``RDL::Type::AstNode.new(:SELECT, trec)``', wrap: false
   type :where, '(``DBType.where_input_type(trec, targs)``) -> ``DBType.where_output_type(trec, targs)``', wrap: false
-  # type :where, '(String, Hash) -> ``RDL::Type::GenericType.new(RDL::Type::NominalType.new(ActiveRecord_Relation), DBType.rec_to_nominal(trec))``', wrap: false
-  # type :where, '(String, *String) -> ``RDL::Type::GenericType.new(RDL::Type::NominalType.new(ActiveRecord_Relation), DBType.rec_to_nominal(trec))``', wrap: false
-  # type :where, '() -> ``RDL::Type::GenericType.new(RDL::Type::NominalType.new(ActiveRecord::QueryMethods::WhereChain), DBType.rec_to_nominal(trec))``', wrap: false
+  type :where, '() -> ``DBType.where_output_type(trec, targs)``', wrap: false
+
+  type :not, '(``DBType.not_input_type(trec, targs)``) -> ``DBType.not_output_type(trec, targs)``', wrap: false
 
 
   type :joins, '(``DBType.joins_one_input_type(trec, targs)``) -> ``DBType.joins_one_in_output(trec, targs)``', wrap: false
   type :joins, '(``DBType.joins_multi_input_type(trec, targs)``, Symbol, *Symbol) -> ``DBType.joins_multi_output(trec, targs)``', wrap: false
 
-
-end
-
-module ActiveRecord::QueryMethods
-  extend RDL::Annotate
-  ## Types from this module are used when receiver is ActiveRecord_relation
-  
-  # type :where, '(``DBType.where_input_type(trec, targs)``) -> ``RDL::Type::GenericType.new(RDL::Type::NominalType.new(ActiveRecord_Relation), trec.params[0])``', wrap: false
-  # type :where, '(String, Hash) -> ``RDL::Type::GenericType.new(RDL::Type::NominalType.new(ActiveRecord_Relation), trec.params[0])``', wrap: false
-  # type :where, '(String, *String) -> ``RDL::Type::GenericType.new(RDL::Type::NominalType.new(ActiveRecord_Relation), trec.params[0])``', wrap: false
-  # type :where, '() -> ``DBType.where_noarg_output_type(trec)``', wrap: false
-
-end
-
-
-class ActiveRecord::QueryMethods::WhereChain
-  extend RDL::Annotate
-  type_params [:t], :dummy
-
-  type :not, '(``DBType.not_input_type(trec, targs)``) -> ``RDL::Type::GenericType.new(RDL::Type::NominalType.new(ActiveRecord_Relation), trec.params[0])``', wrap: false
 
 end
 
@@ -141,6 +120,9 @@ class DBType
       val = t.val
       raise RDL::Typecheck::StaticTypeError, "Expected class singleton type, got #{val} instead." unless val.is_a?(Class)
       return RDL::Type::NominalType.new(val)
+    when RDL::Type::AstNode
+      raise RDL::Typecheck::StaticTypeError, "got unexpected query #{t.op}" unless t.op == :SELECT
+      return RDL::Type::NominalType.new(t.val)
     when RDL::Type::GenericType
       raise RDL::Typecheck::StaticTypeError, "got unexpected type #{t}" unless t.base.klass == ActiveRecord_Relation
       param = t.params[0]
@@ -214,7 +196,7 @@ class DBType
       else
         raise RDL::Typecheck::StaticTypeError, "Unexpected type parameter in  #{trec}."
       end
-    when RDL::Type::SingletonType, RDL::Type::AstNode
+    when RDL::Type::SingletonType
       raise RDL::Typecheck::StaticTypeError, "Unexpected receiver type #{trec}." unless trec.val.is_a?(Class)
       tname = trec.val.to_s.to_sym
       return table_name_to_schema_type(tname, check_col)
@@ -244,35 +226,50 @@ class DBType
     RDL::Type::FiniteHashType.new(h, nil)
   end
 
-  def self.rec_to_ast_type(trec, targs)
-    astnode = RDL::Type::AstNode.new(:AND, targs)
+  def self.where_output_type(trec, targs)
     case trec
-    when RDL::Type::AstNode
-      if trec.children[:projection]
-        trec.children[:projection] << astnode
-      else
-        trec.children[:projection] = [astnode]
-      end
-      return trec
     when RDL::Type::SingletonType
-      tret = RDL::Type::AstNode.new(:SELECT, trec)
-      tret.children[:projection] = [astnode]
-      return tret
+      select_node = RDL::Type::AstNode.new(:SELECT, trec)
+      unless targs.size == 0
+        cond_node = RDL::Type::AstNode.new(:COND, targs)
+        and_node = RDL::Type::AstNode.new(:AND, targs)
+        ast_insert_child(:conditions, and_node, cond_node)
+        ast_insert_child(:projection, select_node, and_node)
+      end
+      return select_node
+    when RDL::Type::AstNode
+      cond_node = RDL::Type::AstNode.new(:COND, targs)
+      ast_insert_child(:conditions, trec.curr, cond_node)
+      return trec
     else
       raise RDL::Typecheck::StaticTypeError, "Unexpected receiver type #{trec}."
     end
   end
 
   def self.where_output_type(trec, targs)
-    tschema = rec_to_ast_type(trec, targs)
-    return tschema
-    # return RDL::Type::UnionType.new(tschema, RDL::Globals.types[:string], RDL::Globals.types[:array]) ## no indepth checking for string or array cases
+    case trec
+    when RDL::Type::SingletonType
+      select_node = RDL::Type::AstNode.new(:SELECT, trec)
+      unless targs.size == 0
+        where_node = RDL::Type::AstNode.new(:WHERE, nil)
+        cond_node = RDL::Type::AstNode.new(:COND, targs)
+        where_node.insert cond_node
+        select_node.insert where_node
+      end
+      return select_node
+    when RDL::Type::AstNode
+      cond_node = RDL::Type::AstNode.new(:COND, targs)
+      trec.curr.insert cond_node
+      return trec
+    else
+      raise RDL::Typecheck::StaticTypeError, "Unexpected receiver type #{trec}."
+    end
   end
 
   def self.where_input_type(trec, targs)
     case trec
     when RDL::Type::AstNode
-      return trec
+      return targs[0]
     else
       tschema = rec_to_schema_type(trec, true)
       return RDL::Type::UnionType.new(tschema, RDL::Globals.types[:string], RDL::Globals.types[:array]) ## no indepth checking for string or array cases
@@ -294,8 +291,26 @@ class DBType
   end
   
   def self.not_input_type(trec, targs)
-    tschema = rec_to_schema_type(trec, true)
-    return RDL::Type::UnionType.new(tschema, RDL::Globals.types[:string], RDL::Globals.types[:array]) ## no indepth checking for string or array cases
+    case trec
+    when RDL::Type::AstNode
+      return targs[0]
+    else
+      tschema = rec_to_schema_type(trec, true)
+      return RDL::Type::UnionType.new(tschema, RDL::Globals.types[:string], RDL::Globals.types[:array]) ## no indepth checking for string or array cases
+    end
+  end
+
+  def self.not_output_type(trec, targs)
+    case trec
+    when RDL::Type::AstNode
+      not_node = RDL::Type::AstNode.new(:NOT, nil)
+      cond_node = RDL::Type::AstNode.new(:COND, targs)
+      not_node.insert cond_node
+      trec.curr.insert not_node
+      return trec
+    else
+      raise RDL::Typecheck::StaticTypeError, "Unexpected receiver type #{trec}."
+    end
   end
 
   def self.exists_input_type(trec, targs)

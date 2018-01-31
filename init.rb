@@ -104,7 +104,7 @@ def run
   CreateItemsTable.migrate(:up)
   CreateJobsTable.migrate(:up)
 
-
+  # puts Person.joins(:items).where.not(items: {name: 'blah'}).to_sql
   DBType.insert_test
   #DBType.insert_test_fail1
 
@@ -112,3 +112,5 @@ def run
   CreateItemsTable.migrate(:down)
   CreateJobsTable.migrate(:down)
 end
+
+# run

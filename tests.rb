@@ -14,11 +14,20 @@ class DBType
     Person.new(first_name: 'sankha', last_name: 'guria')
   end
 
-  type '() -> AstNode[Person]', typecheck: :ast_later, wrap: false
+  type '() -> Person', typecheck: :ast_later, wrap: false
   def self.ast_where_test
-    Person.joins(:items).where(items: {name: 'blah'}).first
+    Person.where(first_name: 'sankha', last_name: 'guria').first
   end
 
+  type '() -> Person', typecheck: :ast_later, wrap: false
+  def self.ast_where_chain_test
+    Person.where(first_name: 'sankha').where(last_name: 'guria').first
+  end
+
+  type '() -> Person', typecheck: :ast_later, wrap: false
+  def self.ast_where_not_test
+    Person.where.not(first_name: 'milod', last_name: 'kaz').first
+  end
 
   ###### INSERTION METHODS #######
   
