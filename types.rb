@@ -249,7 +249,7 @@ class DBType
   def self.where_input_type(trec, targs)
     case trec
     when RDL::Type::AstNode
-      return targs[0]
+      RDL::Globals.types[:top]
     else
       tschema = rec_to_schema_type(trec, true)
       return RDL::Type::UnionType.new(tschema, RDL::Globals.types[:string], RDL::Globals.types[:array]) ## no indepth checking for string or array cases

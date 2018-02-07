@@ -39,6 +39,16 @@ class DBType
     Person.joins(:items).where(last_name: 'kaz').not(first_name: 'milod').first
   end
 
+  type '() -> Person', typecheck: :ast_later_fail, wrap: false
+  def self.ast_where_test_fail1()
+    Person.where(blah: 'anything')
+  end
+
+  type '() -> Person', wrap: false, typecheck: :ast_later
+  def self.ast_joins_fail5()
+    Person.joins(:items).where.not(itemsdfs: {name: 'blah'}).first
+  end
+
   ###### INSERTION METHODS #######
   
   type '() -> Person', typecheck: :later, wrap: false

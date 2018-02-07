@@ -124,3 +124,9 @@ end
 
 RDL.do_typecheck :ast_later
 # run
+
+# labels = [:ast_later_fail]
+# labels.each { |label|
+#   Minitest::Test.new(nil).assert_raises(RDL::Typecheck::StaticTypeError) { RDL.do_typecheck label }
+# }
+
